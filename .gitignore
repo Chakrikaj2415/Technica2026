@@ -218,5 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+.streamlit/secrets.toml
 .DS_Store
-Thumbs.db.vscode/
+Thumbs.db
+.vscode/
