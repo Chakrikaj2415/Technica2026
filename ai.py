@@ -56,3 +56,9 @@ def ai_check(student, correct):
             f"Is the student answer '{student}' mathematically equal to '{correct}'? Reply only yes or no."}],
     )
     return reply.choices[0].message.content.strip().lower().startswith("yes")
+def ai_check(student, correct):
+    reply = client.models.generate_content(
+        model=MODEL,
+        contents=f"Is the student answer '{student}' mathematically equal to '{correct}'? Reply only yes or no.",
+    )
+    return reply.text.strip().lower().startswith("yes")
