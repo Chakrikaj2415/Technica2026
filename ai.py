@@ -1,10 +1,13 @@
+import base64
 import json
 import streamlit as st
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
-client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-MODEL = "gemini-2.5-flash"
+client = OpenAI(
+    base_url="https://models.github.ai/inference",
+    api_key=st.secrets["GITHUB_TOKEN"],
+)
+MODEL = "openai/gpt-4o"
 
 PROMPT = """
 You are a patient math tutor for middle and high school students.
@@ -30,10 +33,26 @@ Rules:
 - If the photo is not a math problem, set is_math to false and leave the other fields empty.
 """
 
+@st.cache_data(show_spinner=False)
 def analyze_problem(image_bytes, mime_type="image/jpeg"):
-    response = client.models.generate_content(
+    b64 = base64.b64encode(image_bytes).decode()
+    reply = client.chat.completions.create(
         model=MODEL,
-        contents=[types.Part.from_bytes(data=image_bytes, mime_type=mime_type), PROMPT],
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": [
+            {"type": "text", "text": PROMPT},
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
+        ]}],
     )
-    return json.loads(response.text)
+    if isinstance(reply, str):
+        st.error(f"GitHub said: {reply[:500]}")
+        st.stop()
+    return json.loads(reply.choices[0].message.content)
+
+def ai_check(student, correct):
+    reply = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content":
+            f"Is the student answer '{student}' mathematically equal to '{correct}'? Reply only yes or no."}],
+    )
+    return reply.choices[0].message.content.strip().lower().startswith("yes")
