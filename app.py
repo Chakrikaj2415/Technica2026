@@ -1,6 +1,9 @@
 import streamlit as st
 from ai import analyze_problem, ai_check
 from checker import is_correct
+import json
+from google.genai import errors
+
 
 st.title("📸 Snap & Solve")
 st.write("Take a picture of a math problem.")
@@ -16,7 +19,16 @@ if image:
 # --- Send it to the AI (only when the button is clicked) ---
 if image and st.button("Solve it ✨"):
     with st.spinner("Reading your problem..."):
-        st.session_state.result = analyze_problem(image.getvalue(), image.type)
+        try:
+            st.session_state.result = analyze_problem(image.getvalue(), image.type)
+        except errors.APIError as e:
+            if e.code == 429:
+                st.warning("⏳ Too many requests right now. Wait a minute and try again.")
+            else:
+                st.error("The AI is busy. Please try again in a moment.")
+        except json.JSONDecodeError:
+            st.error("The AI's reply got scrambled. Tap Solve it again.")
+
 
 # --- Show the solution ---
 result = st.session_state.get("result")
