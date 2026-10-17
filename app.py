@@ -31,3 +31,20 @@ while True:
 camera.release()
 cv2.destroyAllWindows()
 print("\nCamera closed.")
+
+from ai import analyze_problem
+
+if image and st.button("Solve it ✨"):
+    with st.spinner("Reading your problem..."):
+        st.session_state.result = analyze_problem(image.getvalue(), image.type)
+
+result = st.session_state.get("result")
+if result:
+    if not result["is_math"]:
+        st.warning("That doesn't look like a math problem. Try another photo!")
+    else:
+        st.subheader(f"Topic: {result['topic']}")
+        for i, step in enumerate(result["steps"], start=1):
+            st.markdown(f"**Step {i}:** {step['explanation']}")
+            st.latex(step["math"])
+        st.success(f"Answer: {result['final_answer']}")
