@@ -1,8 +1,9 @@
 import re
 import streamlit as st
+import easyocr
 from io import BytesIO
 from PIL import Image
-from ocrmac import ocrmac
+#from ocrmac import ocrmac
 from ai import analyze_problem, ai_check
 from checker import is_correct
 
@@ -27,6 +28,7 @@ def _math_score(line):
 def read_photo(image_file):
     """Read the photo and return only the line that looks like a math problem."""
     img = Image.open(BytesIO(image_file.getvalue()))
+<<<<<<< Updated upstream
     results = ocrmac.OCR(img, recognition_level="accurate").recognize()
     lines = [_normalize(r[0]) for r in results]
     if not lines:
@@ -39,6 +41,12 @@ def read_photo(image_file):
 
 
 # ---------- Page ----------
+=======
+    results = easyocr.OCR(img, recognition_level="accurate").recognize()
+    text = " ".join(r[0] for r in results)
+    return (text.replace("²", "^2").replace("³", "^3")
+                .replace("×", "*").replace("÷", "/").replace("−", "-"))
+>>>>>>> Stashed changes
 
 st.title("📸 Snap & Solve")
 st.write("Take a picture of a math problem, check what the camera read, then solve it.")
