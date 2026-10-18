@@ -57,7 +57,7 @@ def show_steps(result):
 
 # ---------- Page ----------
 
-st.title("AlgaeBra")
+st.title("📸 Snap & Solve")
 st.write("Take a picture of a math problem (or a whole worksheet), check what the camera read, "
          "then solve it.")
 
@@ -123,13 +123,55 @@ if results:
             st.session_state.feedback = None
             st.session_state.wrong_count = 0
             st.session_state.practice_num = 1
+            st.session_state.seen = {first["practice_1"]["text"]}
+            st.session_state.score = 0
+            st.session_state.attempts = 0
+            st.session_state.streak = 0
+            st.session_state.last_drill = None
+
+        def next_problem(easier):
+            """Make a new practice problem the student hasn't seen yet."""
+            for _ in range(30):
+                p = new_practice(first["kind"], first["var"], easier)
+                if p["text"] not in st.session_state.seen:
+                    break
+            st.session_state.seen.add(p["text"])
+            st.session_state.practice = p
+            st.session_state.feedback = None
+            st.session_state.practice_num += 1
 
         practice = st.session_state.practice
 
         st.divider()
-        st.subheader(f"Your turn to try! (practice problem {st.session_state.practice_num})")
+        st.subheader(f"Your turn! (practice problem {st.session_state.practice_num})")
         if many:
-            st.caption(f"A practice problem on {first['topic']}:")
+            st.caption(f"Practice problems on {first['topic']}:")
+
+        drill = st.toggle("Drill mode: Practice questions until you feel ready.",
+                          key="drill")
+        if st.session_state.attempts:
+            st.caption(f"Score: {st.session_state.score}/{st.session_state.attempts} · "
+                       f"🔥 Streak: {st.session_state.streak}")
+
+        # --- Drill mode: quick feedback on the question just answered ---
+        last = st.session_state.get("last_drill")
+        if drill and last:
+            if last["right"]:
+                st.success(f"✅ Correct! The answer was **{last['answer']}**.")
+            else:
+                st.error(f"❌ You answered **{last['given']}**, but the answer was "
+                         f"**{last['answer']}**.")
+            with st.expander("See how to solve the last one"):
+                st.markdown(last["problem"])
+                worked_last = analyze_problem(last["text"])
+                if worked_last["is_math"]:
+                    show_steps(worked_last)
+            if not last["right"] and st.session_state.wrong_count >= 2:
+                st.warning("This topic is tricky, and that's okay! "
+                           "These lessons explain it in more depth:")
+                for name, url in help_links(first["topic"]).items():
+                    st.link_button(f"📚 {name}", url)
+
         st.markdown(practice["problem"])
 
         if st.session_state.feedback is None:
@@ -142,16 +184,29 @@ if results:
                 ok = is_correct(answer, practice["answer"])
                 if ok is None:                         # SymPy couldn't read the answer
                     ok = ai_check(answer, practice["answer"])
-                st.session_state.last_answer = answer
+
+                st.session_state.attempts += 1
                 if ok:
-                    st.session_state.feedback = "right"
+                    st.session_state.score += 1
+                    st.session_state.streak += 1
                     st.session_state.wrong_count = 0
                 else:
-                    st.session_state.feedback = "wrong"
+                    st.session_state.streak = 0
                     st.session_state.wrong_count += 1
+
+                if drill:
+                    # Remember this one for quick feedback, then go straight to a new question
+                    st.session_state.last_drill = {
+                        "problem": practice["problem"], "text": practice["text"],
+                        "answer": practice["answer"], "given": answer, "right": ok,
+                    }
+                    next_problem(easier=not ok)
+                else:
+                    st.session_state.last_answer = answer
+                    st.session_state.feedback = "right" if ok else "wrong"
                 st.rerun()
         else:
-            # --- Show feedback + the worked solution ---
+            # --- Normal mode: feedback + the full worked solution ---
             worked = analyze_problem(practice["text"])
 
             if st.session_state.feedback == "right":
@@ -175,13 +230,11 @@ if results:
 
             # --- Next problem ---
             if st.button("Try another one! :)"):
-                easier = st.session_state.feedback == "wrong"   # a bit easier after a miss
-                st.session_state.practice = new_practice(first["kind"], first["var"], easier)
-                st.session_state.feedback = None
-                st.session_state.practice_num += 1
+                next_problem(easier=st.session_state.feedback == "wrong")
                 st.rerun()
 
-                # ---------- Google search ideas (bottom of the page) ----------
+
+# ---------- Google search ideas (bottom of the page) ----------
 
 SEARCH_IDEAS = {
     "arithmetic": [
