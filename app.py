@@ -1,4 +1,6 @@
 import re
+import os
+import base64
 import streamlit as st
 from io import BytesIO
 from urllib.parse import quote_plus
@@ -6,6 +8,51 @@ from PIL import Image
 from ocrmac import ocrmac
 from ai import analyze_problem, ai_check, new_practice
 from checker import is_correct
+
+
+# ---------- Page settings (must be the first Streamlit command) ----------
+
+st.set_page_config(
+    page_title="Algae-Bra",
+    page_icon="logo.png",
+    layout="centered"
+)
+
+# ---------- Background image + custom styling ----------
+
+bg_data = ""
+# Checks both locations just in case!
+for path in ["static/side_background.png", "side_background.png"]:
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            bg_data = base64.b64encode(f.read()).decode()
+        break
+
+st.markdown(
+    f"""
+    <style>
+    /* Forces the background color and applies the side patterns on both sides */
+    [data-testid="stAppViewContainer"] {{
+        background-color: #CBE3E3;
+        background-image: url('data:image/png;base64,{bg_data}'), url('data:image/png;base64,{bg_data}');
+        background-size: 160px;
+        background-repeat: repeat-y, repeat-y;
+        background-position: left top, right top;
+        background-attachment: fixed;
+    }}
+
+    /* Makes the central math card clean, bright white, and slightly rounded */
+    [data-testid="stMainBlockContainer"] {{
+        background-color: rgba(255, 255, 255, 0.94);
+        padding: 40px;
+        border-radius: 24px;
+        box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.08);
+        margin-top: 20px;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
 # ---------- Reading the photo ----------
@@ -55,11 +102,44 @@ def show_steps(result):
         st.latex(step["math"])
 
 
-# ---------- Page ----------
+# ==========================================
+# --- CENTERED LOGO & HEADER LAYOUT ---
+# ==========================================
 
-st.title("📸 Snap & Solve")
+col1, col2, col3 = st.columns([1, 1.5, 1])
+with col2:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", use_container_width=True)
+
+st.markdown(
+    """
+    <h1 style="
+        text-align: center;
+        font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
+        font-size: 52px;
+        font-weight: 800;
+        background: linear-gradient(45deg, #1E5128, #4E9F3D, #1976D2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 5px;
+    ">📐 Algae-Bra 📐</h1>
+    <p style="
+        text-align: center;
+        color: #2C5E3B;
+        font-size: 18px;
+        font-weight: 500;
+        margin-top: -10px;
+        margin-bottom: 25px;
+    ">Snap a problem. Learn the steps. Practice until it clicks.</p>
+    """,
+    unsafe_allow_html=True
+)
+
 st.write("Take a picture of a math problem (or a whole worksheet), check what the camera read, "
          "then solve it.")
+
+
+# ---------- Page ----------
 
 # --- Get the photo ---
 photo = st.camera_input("Snap your problem")
