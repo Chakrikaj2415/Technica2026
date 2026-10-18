@@ -2,7 +2,7 @@ import random
 import re
 from math import gcd
 import streamlit as st
-from sympy import Eq, Poly, Rational, expand, factor, latex, simplify, solve
+from sympy import Eq, Poly, Rational, Symbol, expand, factor, latex, simplify, solve
 from sympy.parsing.sympy_parser import (
     parse_expr, standard_transformations,
     implicit_multiplication_application, convert_xor,
@@ -128,6 +128,8 @@ def _result(text, topic, steps, answer, kind, practice, x):
         "is_math": True,
         "problem": text,
         "topic": topic,
+        "kind": kind,
+        "var": str(x) if x is not None else None,
         "steps": steps,
         "final_answer": answer,
         "practice_1": practice(x, easier=False),
@@ -393,26 +395,47 @@ def _solve_general(L, R, x, left_text, right_text):
 # ---------- practice problems ----------
 
 def _practice_arithmetic(x, easier):
-    a, b, c, d = (random.randint(2, 9) for _ in range(4))
-    text = f"{a} + {b} * {c}" if easier else f"{a * b} / {b} + {c}({d} - {a})"
-    return {"problem": f"Calculate: ${_tex(text)}$", "answer": str(_p(text))}
+    a, b, c = (random.randint(2, 9) for _ in range(3))
+    if easier:
+        text = f"{a} + {b}"
+    else:
+        text = random.choice([f"{a} + {b} * {c}", f"{a * b} / {b} - {c}",
+                              f"{a + b + c} - {b} + {c}", f"{c}({a} + {b})"])
+    return {"text": text, "problem": f"Calculate: ${_tex(text)}$", "answer": str(_p(text))}
 
 def _practice_simplify(x, easier):
     a, b, c = random.randint(2, 9), random.randint(2, 9), random.randint(1, 9)
     text = f"{a}{x} + {b}{x} - {c}" if easier else f"{a}({x} + {c}) - {b}{x}"
-    return {"problem": f"Simplify: ${_tex(text)}$", "answer": str(expand(_p(text)))}
+    return {"text": text, "problem": f"Simplify: ${_tex(text)}$",
+            "answer": str(expand(_p(text)))}
 
 def _practice_linear(x, easier):
     sol = random.randint(1, 6) if easier else random.choice([-1, 1]) * random.randint(1, 9)
     a = random.randint(2, 5) if easier else random.randint(2, 9)
     b = random.randint(1, 9) if easier else random.choice([-1, 1]) * random.randint(1, 15)
-    return {"problem": f"Solve: ${latex(Eq(a * x + b, a * sol + b))}$",
+    sign = "+" if b > 0 else "-"
+    text = f"{a}{x} {sign} {abs(b)} = {a * sol + b}"
+    return {"text": text, "problem": f"Solve: ${latex(Eq(a * x + b, a * sol + b))}$",
             "answer": f"{x} = {sol}"}
 
 def _practice_quadratic(x, easier):
     r1, r2 = random.sample(range(1, 6) if easier else range(-7, 8), 2)
-    return {"problem": f"Solve: ${latex(Eq(expand((x - r1) * (x - r2)), 0))}$",
+    expr = expand((x - r1) * (x - r2))
+    return {"text": f"{expr} = 0", "problem": f"Solve: ${latex(Eq(expr, 0))}$",
             "answer": f"{x} = {r1}, {x} = {r2}"}
+
+_PRACTICE = {
+    "arithmetic": _practice_arithmetic,
+    "simplify": _practice_simplify,
+    "linear": _practice_linear,
+    "quadratic": _practice_quadratic,
+    "general": _practice_quadratic,
+}
+
+def new_practice(kind, var, easier=False):
+    """Make a fresh practice problem of the same kind (used by 'Try another one')."""
+    x = Symbol(var) if var else None
+    return _PRACTICE[kind](x, easier)
 
 # ---------- main function used by app.py ----------
 

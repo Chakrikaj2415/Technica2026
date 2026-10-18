@@ -1,4 +1,4 @@
-from sympy import python, simplify
+from sympy import simplify
 from sympy.parsing.sympy_parser import (
     parse_expr, standard_transformations,
     implicit_multiplication_application, convert_xor,

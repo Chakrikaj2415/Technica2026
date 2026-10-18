@@ -1,9 +1,10 @@
 import re
 import streamlit as st
 from io import BytesIO
+from urllib.parse import quote_plus
 from PIL import Image
 from ocrmac import ocrmac
-from ai import analyze_problem, ai_check
+from ai import analyze_problem, ai_check, new_practice
 from checker import is_correct
 
 
@@ -14,34 +15,51 @@ def _normalize(text):
                 .replace("²", "^2").replace("³", "^3").strip())
 
 def _math_score(line):
-    """Higher score = more likely to be the math problem."""
+    """Higher score = more likely to be a math problem."""
     if not re.search(r"[=+\-*/^]", line):          # no math operator at all → not math
         return 0
     words = re.findall(r"[A-Za-z]{2,}", line)       # real words like "Khan", "Visit"
     symbols = re.findall(r"[0-9=+\-*/^()]", line)  # numbers and math symbols
     score = len(symbols) - 3 * len(words)
     if "=" in line:
-        score += 5                                  # equations are very likely the problem
+        score += 5                                  # equations are very likely problems
     return score
 
 def read_photo(image_file):
-    """Read the photo and return only the line that looks like a math problem."""
+    """Read the photo and return every line that looks like a math problem, separated by ';'."""
     img = Image.open(BytesIO(image_file.getvalue()))
     results = ocrmac.OCR(img, recognition_level="accurate").recognize()
-    lines = [_normalize(r[0]) for r in results]
-    if not lines:
-        return ""
-    best = max(lines, key=_math_score)
-    if _math_score(best) <= 0:
-        return ""
-    best = re.sub(r"[A-Za-z]{2,}", "", best)        # drop any leftover words
-    return re.sub(r"\s+", " ", best).strip()
+    problems = []
+    for r in results:
+        line = _normalize(r[0])
+        if _math_score(line) >= 3:
+            line = re.sub(r"[A-Za-z]{2,}", "", line)    # drop leftover words
+            line = re.sub(r"\s+", " ", line).strip()
+            if line and line not in problems:
+                problems.append(line)
+    return " ; ".join(problems)
+
+
+# ---------- Helpers ----------
+
+def help_links(topic):
+    q = quote_plus(topic)
+    return {
+        "Khan Academy": f"https://www.khanacademy.org/search?page_search_query={q}",
+        "YouTube lessons": f"https://www.youtube.com/results?search_query={quote_plus(topic + ' math lesson')}",
+    }
+
+def show_steps(result):
+    for i, step in enumerate(result["steps"], start=1):
+        st.markdown(f"**Step {i}:** {step['explanation']}")
+        st.latex(step["math"])
 
 
 # ---------- Page ----------
 
 st.title("📸 Snap & Solve")
-st.write("Take a picture of a math problem, check what the camera read, then solve it.")
+st.write("Take a picture of a math problem (or a whole worksheet), check what the camera read, "
+         "then solve it.")
 
 # --- Get the photo ---
 photo = st.camera_input("Snap your problem")
@@ -60,42 +78,105 @@ if image and not st.session_state.get("problem_text"):
 
 # --- The problem text (filled in from the photo, editable) ---
 problem_text = st.text_input(
-    "Problem (check it and fix anything the camera misread)",
+    "Problem(s): check them and fix anything the camera misread. "
+    "Separate multiple problems with ;",
     key="problem_text",
 )
 
 if problem_text and st.button("Solve it ✨"):
-    st.session_state.result = analyze_problem(problem_text)
+    problems = [p.strip() for p in problem_text.split(";") if p.strip()]
+    st.session_state.results = [(p, analyze_problem(p)) for p in problems]
 
-# --- Show the solution ---
-result = st.session_state.get("result")
-if result:
-    if not result["is_math"]:
-        st.warning("I couldn't solve that one. I can do arithmetic (like 6/2(1+2)), "
-                   "simplifying (like 2(x + 3) + 4x), and equations with one variable "
-                   "(like 2x + 3 = 11 or x^2 - 5x + 6 = 0). Check the problem box for typos.")
-    else:
-        st.subheader(f"Topic: {result['topic']}")
-        for i, step in enumerate(result["steps"], start=1):
-            st.markdown(f"**Step {i}:** {step['explanation']}")
-            st.latex(step["math"])
-        st.success(f"Answer: {result['final_answer']}")
+# --- Show the solutions ---
+results = st.session_state.get("results", [])
+if results:
+    many = len(results) > 1
 
-        # --- Practice problem 1 ---
-        st.divider()
-        st.subheader("✏️ Your turn")
-        st.markdown(result["practice_1"]["problem"])
+    if many:
+        st.subheader(f"📋 Answers to all {len(results)} problems")
+        for n, (p, r) in enumerate(results, start=1):
+            answer = r["final_answer"] if r["is_math"] else "couldn't solve"
+            st.markdown(f"**{n}.** `{p}` → **{answer}**")
+        st.caption("Open each problem below to see the step-by-step solution.")
 
-        with st.form("practice_1"):
-            answer = st.text_input("Your answer (for example: x = 5)")
-            submitted = st.form_submit_button("Check my answer")
-
-        if submitted and answer.strip():
-            correct = result["practice_1"]["answer"]
-            ok = is_correct(answer, correct)
-            if ok is None:                 # SymPy couldn't read the answer
-                ok = ai_check(answer, correct)
-            if ok:
-                st.success("🎉 Correct! Nice work.")
+    for n, (p, result) in enumerate(results, start=1):
+        title = f"Problem {n}: {p}" if many else f"Problem: {p}"
+        with st.expander(title, expanded=not many):
+            if not result["is_math"]:
+                st.warning("I couldn't solve this one. I can do arithmetic (like 6/2(1+2)), "
+                           "simplifying (like 2(x + 3) + 4x), and equations with one variable "
+                           "(like 2x + 3 = 11 or x^2 - 5x + 6 = 0). Check it for typos.")
             else:
-                st.error("Not quite. Let's look at it another way.")
+                st.markdown(f"**Topic:** {result['topic']}")
+                show_steps(result)
+                st.success(f"Answer: {result['final_answer']}")
+
+    # ---------- Practice loop ----------
+    solved = [r for _, r in results if r["is_math"]]
+    if solved:
+        first = solved[0]
+
+        # Start fresh practice whenever a new problem is solved
+        if st.session_state.get("practice_for") != first["problem"]:
+            st.session_state.practice_for = first["problem"]
+            st.session_state.practice = first["practice_1"]
+            st.session_state.feedback = None
+            st.session_state.wrong_count = 0
+            st.session_state.practice_num = 1
+
+        practice = st.session_state.practice
+
+        st.divider()
+        st.subheader(f"✏️ Your turn (practice problem {st.session_state.practice_num})")
+        if many:
+            st.caption(f"A practice problem on {first['topic']}:")
+        st.markdown(practice["problem"])
+
+        if st.session_state.feedback is None:
+            # --- Ask for an answer ---
+            with st.form(f"practice_{st.session_state.practice_num}"):
+                answer = st.text_input("Your answer (for example: x = 5, or just 7)")
+                submitted = st.form_submit_button("Check my answer")
+
+            if submitted and answer.strip():
+                ok = is_correct(answer, practice["answer"])
+                if ok is None:                         # SymPy couldn't read the answer
+                    ok = ai_check(answer, practice["answer"])
+                st.session_state.last_answer = answer
+                if ok:
+                    st.session_state.feedback = "right"
+                    st.session_state.wrong_count = 0
+                else:
+                    st.session_state.feedback = "wrong"
+                    st.session_state.wrong_count += 1
+                st.rerun()
+        else:
+            # --- Show feedback + the worked solution ---
+            worked = analyze_problem(practice["text"])
+
+            if st.session_state.feedback == "right":
+                st.success(f"🎉 That's correct! The answer is **{practice['answer']}**. "
+                           f"Here's why it works:")
+            else:
+                st.error(f"Not quite. You answered **{st.session_state.last_answer}**, but the "
+                         f"correct answer is **{practice['answer']}**. "
+                         f"Let's go through it step by step:")
+
+            if worked["is_math"]:
+                show_steps(worked)
+
+            if st.session_state.feedback == "wrong":
+                st.info(f"💡 **Tip:** {first['explanation']}")
+                if st.session_state.wrong_count >= 2:
+                    st.warning("This topic is tricky, and that's okay! "
+                               "These lessons explain it in more depth:")
+                    for name, url in help_links(first["topic"]).items():
+                        st.link_button(f"📚 {name}", url)
+
+            # --- Next problem ---
+            if st.button("Try another one ➡️"):
+                easier = st.session_state.feedback == "wrong"   # a bit easier after a miss
+                st.session_state.practice = new_practice(first["kind"], first["var"], easier)
+                st.session_state.feedback = None
+                st.session_state.practice_num += 1
+                st.rerun()
