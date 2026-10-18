@@ -57,7 +57,7 @@ def show_steps(result):
 
 # ---------- Page ----------
 
-st.title("📸 Snap & Solve")
+st.title("AlgaeBra")
 st.write("Take a picture of a math problem (or a whole worksheet), check what the camera read, "
          "then solve it.")
 
@@ -93,7 +93,7 @@ if results:
     many = len(results) > 1
 
     if many:
-        st.subheader(f"📋 Answers to all {len(results)} problems")
+        st.subheader(f"Answers to all {len(results)} problems")
         for n, (p, r) in enumerate(results, start=1):
             answer = r["final_answer"] if r["is_math"] else "couldn't solve"
             st.markdown(f"**{n}.** `{p}` → **{answer}**")
@@ -127,7 +127,7 @@ if results:
         practice = st.session_state.practice
 
         st.divider()
-        st.subheader(f"✏️ Your turn (practice problem {st.session_state.practice_num})")
+        st.subheader(f"Your turn to try! (practice problem {st.session_state.practice_num})")
         if many:
             st.caption(f"A practice problem on {first['topic']}:")
         st.markdown(practice["problem"])
@@ -155,7 +155,7 @@ if results:
             worked = analyze_problem(practice["text"])
 
             if st.session_state.feedback == "right":
-                st.success(f"🎉 That's correct! The answer is **{practice['answer']}**. "
+                st.success(f"That's correct! The answer is **{practice['answer']}**. "
                            f"Here's why it works:")
             else:
                 st.error(f"Not quite. You answered **{st.session_state.last_answer}**, but the "
@@ -174,9 +174,58 @@ if results:
                         st.link_button(f"📚 {name}", url)
 
             # --- Next problem ---
-            if st.button("Try another one ➡️"):
+            if st.button("Try another one! :)"):
                 easier = st.session_state.feedback == "wrong"   # a bit easier after a miss
                 st.session_state.practice = new_practice(first["kind"], first["var"], easier)
                 st.session_state.feedback = None
                 st.session_state.practice_num += 1
                 st.rerun()
+
+                # ---------- Google search ideas (bottom of the page) ----------
+
+SEARCH_IDEAS = {
+    "arithmetic": [
+        "order of operations PEMDAS explained",
+        "PEMDAS multiplication and division left to right",
+        "order of operations practice problems with answers",
+        "why do we use the order of operations",
+    ],
+    "simplify": [
+        "how to combine like terms",
+        "distributive property explained",
+        "simplifying algebraic expressions practice",
+        "like terms vs unlike terms examples",
+    ],
+    "linear": [
+        "how to solve linear equations step by step",
+        "solving equations with variables on both sides",
+        "solving equations with fractions",
+        "linear equations practice problems with answers",
+    ],
+    "quadratic": [
+        "how to factor quadratic equations",
+        "quadratic formula explained",
+        "what is the discriminant in a quadratic",
+        "factoring quadratics practice problems",
+    ],
+    "general": [
+        "how to solve polynomial equations",
+        "factoring cubic equations",
+        "zero product property explained",
+        "finding roots of polynomials step by step",
+    ],
+}
+
+solved_kinds = []
+for _, r in st.session_state.get("results", []):
+    if r["is_math"] and (r["kind"], r["topic"]) not in solved_kinds:
+        solved_kinds.append((r["kind"], r["topic"]))
+
+if solved_kinds:
+    st.divider()
+    st.subheader("Want to learn more? Need more Resources? You can click on the links below.")
+    for kind, topic in solved_kinds:
+        if len(solved_kinds) > 1:
+            st.caption(f"For {topic}:")
+        for idea in SEARCH_IDEAS.get(kind, []):
+            st.link_button(f"{idea}", "https://www.google.com/search?q=" + quote_plus(idea))
