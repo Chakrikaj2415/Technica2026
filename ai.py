@@ -1,64 +1,128 @@
-import base64
-import json
+import random
 import streamlit as st
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="https://models.github.ai/inference",
-    api_key=st.secrets["GITHUB_TOKEN"],
+from sympy import Eq, Poly, expand, factor, latex, solve
+from sympy.parsing.sympy_parser import (
+    parse_expr, standard_transformations,
+    implicit_multiplication_application, convert_xor,
 )
-MODEL = "openai/gpt-4o"
 
-PROMPT = """
-You are a patient math tutor for middle and high school students.
-Look at the photo of a math problem and reply with ONLY this JSON:
+TRANSFORMS = standard_transformations + (implicit_multiplication_application, convert_xor)
 
-{
-  "is_math": true or false,
-  "problem": "the problem as you read it",
-  "topic": "short topic name, e.g. solving two-step linear equations",
-  "steps": [
-    {"explanation": "one short sentence", "math": "the math for this step in LaTeX, no $ signs"}
-  ],
-  "final_answer": "x = 4",
-  "practice_1": {"problem": "a similar problem with different numbers", "answer": "x = 7"},
-  "explanation": "a simple explanation of the topic for a student who is stuck, under 120 words, with one tiny example",
-  "practice_2": {"problem": "another similar problem, slightly easier", "answer": "x = 2"}
+EXPLANATIONS = {
+    "linear": (
+        "A linear equation is like a balance scale: whatever you do to one side, "
+        "you must do to the other. Your goal is to get the variable alone. "
+        "First undo adding or subtracting by moving the plain numbers to the other side. "
+        "Then undo multiplying by dividing by the number in front of the variable. "
+        "Example: 3x + 2 = 11. Subtract 2: 3x = 9. Divide by 3: x = 3. "
+        "Check it: 3(3) + 2 = 11 ✓"
+    ),
+    "quadratic": (
+        "A quadratic equation has a squared term, like x². "
+        "Step 1: move everything to one side so it equals 0. "
+        "Step 2: try to factor it into two brackets, like (x − 2)(x − 3) = 0. "
+        "Step 3: if two things multiply to 0, one of them must be 0, "
+        "so set each bracket to 0: x = 2 or x = 3. "
+        "Quadratics usually have two answers. Type both, separated by a comma: x = 2, x = 3"
+    ),
 }
 
-Rules:
-- Answers must be plain math SymPy can read: numbers, variables, + - * / ^, = and parentheses. No words.
-- If there are several solutions, separate them with commas: "x = 2, x = -3".
-- Keep each step short. Use 3 to 8 steps.
-- If the photo is not a math problem, set is_math to false and leave the other fields empty.
-"""
+def _parse(text):
+    text = text.replace("−", "-").replace("×", "*").replace("÷", "/")
+    left, right = text.split("=", 1) if "=" in text else (text, "0")
+    return (parse_expr(left, transformations=TRANSFORMS),
+            parse_expr(right, transformations=TRANSFORMS))
+
+def _step(explanation, left, right):
+    return {"explanation": explanation, "math": f"{latex(left)} = {latex(right)}"}
+
+def _solve_linear(L, R, x):
+    steps = [_step("Start with the equation.", L, R)]
+    L, R = expand(L), expand(R)
+    if steps[0]["math"] != f"{latex(L)} = {latex(R)}":
+        steps.append(_step("Multiply out the parentheses on both sides.", L, R))
+    a, b = Poly(L, x).coeff_monomial(x), Poly(L, x).coeff_monomial(1)
+    c, d = Poly(R, x).coeff_monomial(x), Poly(R, x).coeff_monomial(1)
+    if c != 0:
+        verb, word = ("Subtract", "from") if c > 0 else ("Add", "to")
+        a = a - c
+        steps.append(_step(f"{verb} ${latex(abs(c) * x)}$ {word} both sides "
+                           f"to get all the {x} terms on the left.", a * x + b, d))
+    if b != 0:
+        verb, word = ("Subtract", "from") if b > 0 else ("Add", "to")
+        d = d - b
+        steps.append(_step(f"{verb} {abs(b)} {word} both sides to get the {x} term alone.", a * x, d))
+    if a != 1:
+        steps.append(_step(f"Divide both sides by {a}.", x, d / a))
+    return steps, f"{x} = {d / a}"
+
+def _solve_quadratic(L, R, x):
+    steps = [_step("Start with the equation.", L, R)]
+    expr = expand(L - R)
+    steps.append(_step("Move everything to one side so it equals 0.", expr, 0))
+    sols = solve(Eq(expr, 0), x)
+    factored = factor(expr)
+    if factored != expr and all(s.is_rational for s in sols):
+        steps.append(_step("Factor the left side.", factored, 0))
+        steps.append({"explanation": "If two things multiply to 0, one of them must be 0. "
+                                     "Set each factor to 0 and solve.",
+                      "math": r",\quad ".join(f"{x} = {latex(s)}" for s in sols)})
+    else:
+        p = Poly(expr, x)
+        A, B, C = p.coeff_monomial(x**2), p.coeff_monomial(x), p.coeff_monomial(1)
+        steps.append({"explanation": f"It doesn't factor nicely, so use the quadratic formula "
+                                     f"with a = {A}, b = {B}, c = {C}.",
+                      "math": rf"{x} = \frac{{-b \pm \sqrt{{b^2 - 4ac}}}}{{2a}}"})
+        steps.append({"explanation": "Plug in the numbers and simplify.",
+                      "math": r",\quad ".join(f"{x} = {latex(s)}" for s in sols)})
+    return steps, ", ".join(f"{x} = {s}" for s in sols)
+
+def _practice_linear(x, easier):
+    sol = random.randint(1, 6) if easier else random.choice([-1, 1]) * random.randint(1, 9)
+    a = random.randint(2, 5) if easier else random.randint(2, 9)
+    b = random.randint(1, 9) if easier else random.choice([-1, 1]) * random.randint(1, 15)
+    return {"problem": f"Solve: ${latex(Eq(a * x + b, a * sol + b))}$",
+            "answer": f"{x} = {sol}"}
+
+def _practice_quadratic(x, easier):
+    r1, r2 = random.sample(range(1, 6) if easier else range(-7, 8), 2)
+    return {"problem": f"Solve: ${latex(Eq(expand((x - r1) * (x - r2)), 0))}$",
+            "answer": f"{x} = {r1}, {x} = {r2}"}
 
 @st.cache_data(show_spinner=False)
-def analyze_problem(image_bytes, mime_type="image/jpeg"):
-    b64 = base64.b64encode(image_bytes).decode()
-    reply = client.chat.completions.create(
-        model=MODEL,
-        response_format={"type": "json_object"},
-        messages=[{"role": "user", "content": [
-            {"type": "text", "text": PROMPT},
-            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
-        ]}],
-    )
-    if isinstance(reply, str):
-        st.error(f"GitHub said: {reply[:500]}")
-        st.stop()
-    return json.loads(reply.choices[0].message.content)
+def analyze_problem(problem_text):
+    try:
+        L, R = _parse(problem_text)
+        expr = expand(L - R)
+        if len(expr.free_symbols) != 1:
+            return {"is_math": False}
+        x = next(iter(expr.free_symbols))
+        degree = Poly(expr, x).degree()
+    except Exception:
+        return {"is_math": False}
+
+    if degree == 1:
+        kind, topic = "linear", "solving linear equations"
+        steps, answer = _solve_linear(L, R, x)
+        practice = _practice_linear
+    elif degree == 2:
+        kind, topic = "quadratic", "solving quadratic equations"
+        steps, answer = _solve_quadratic(L, R, x)
+        practice = _practice_quadratic
+    else:
+        return {"is_math": False}
+
+    return {
+        "is_math": True,
+        "problem": problem_text,
+        "topic": topic,
+        "steps": steps,
+        "final_answer": answer,
+        "practice_1": practice(x, easier=False),
+        "explanation": EXPLANATIONS[kind],
+        "practice_2": practice(x, easier=True),
+    }
 
 def ai_check(student, correct):
-    reply = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content":
-            f"Is the student answer '{student}' mathematically equal to '{correct}'? Reply only yes or no."}],
-    )
-    return reply.choices[0].message.content.strip().lower().startswith("yes")
-def ai_check(student, correct):
-    reply = client.models.generate_content(
-        model=MODEL,
-        contents=f"Is the student answer '{student}' mathematically equal to '{correct}'? Reply only yes or no.",
-    )
-    return reply.text.strip().lower().startswith("yes")
+    """No AI in this version: if SymPy can't read the answer, count it as wrong."""
+    return False
